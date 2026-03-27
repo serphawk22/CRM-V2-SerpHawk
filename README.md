@@ -73,7 +73,7 @@ SERP Hawk CRM V2 is a comprehensive customer relationship management system desi
 2. Connect your GitHub repository
 3. Set the root directory to `frontend`
 4. Add environment variables:
-   - `NEXT_PUBLIC_API_URL`: Your backend API URL
+   - `wat `: Your backend API URL
 5. Deploy automatically
 
 #### Option 2: Netlify
@@ -103,7 +103,10 @@ SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USERNAME=your_email@gmail.com
 SMTP_PASSWORD=your_app_password
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000  # local development
+
+# In Vercel set Environment Variable (Production):
+# NEXT_PUBLIC_API_BASE_URL=https://web-production-30b6.up.railway.app
 ```
 
 ## Local Development
