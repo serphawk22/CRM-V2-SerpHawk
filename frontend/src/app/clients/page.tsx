@@ -397,9 +397,9 @@ export default function ClientsPage() {
                   >
                     <div className="absolute -right-8 -top-8 w-24 h-24 bg-gradient-to-br from-indigo-500/10 to-cyan-500/10 rounded-full blur-xl group-hover:scale-150 transition-transform"></div>
                     
-                    <div className="flex justify-between items-start mb-6 relative z-10">
-                      <div>
-                        <h3 className="font-black text-xl text-slate-800 group-hover:text-indigo-600 transition-colors tracking-tight line-clamp-1">
+                    <div className="flex justify-between items-start gap-3 mb-6 relative z-10">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-black text-xl text-slate-800 group-hover:text-indigo-600 transition-colors tracking-tight break-words">
                           {client.companyName || client.projectName || client.email || 'Unnamed Client'}
                         </h3>
                         {client.email && (
@@ -408,12 +408,12 @@ export default function ClientsPage() {
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex-shrink-0 flex items-center gap-2">
                         <StatusBadge statusName={client.status} />
-                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); setSelectedClientForMsg(client); setIsMessageModalOpen(true); }} title="Send message" className="ml-2 p-1.5 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-colors">
+                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); setSelectedClientForMsg(client); setIsMessageModalOpen(true); }} title="Send message" className="p-1.5 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-colors shrink-0">
                           <MessageCircle className="w-4 h-4" />
                         </button>
-                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); handleDeleteClient(client.id); }} title="Delete client" className="p-1.5 rounded-full bg-red-100 hover:bg-red-200 text-red-600 transition-colors">
+                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); handleDeleteClient(client.id); }} title="Delete client" className="p-1.5 rounded-full bg-red-100 hover:bg-red-200 text-red-600 transition-colors shrink-0">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                       </div>

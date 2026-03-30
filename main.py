@@ -1404,8 +1404,15 @@ def send_message_to_client(
 ):
     """Send a message to a client. Creates thread if needed."""
     try:
-        # Get the current user (admin sending the message)
-        admin_id = 1  # Default to admin user
+        # Get the first admin user, or the first user if no admin exists
+        admin = session.exec(select(User).where(User.role == "Admin")).first()
+        if not admin:
+            admin = session.exec(select(User)).first()
+        
+        if not admin:
+            raise HTTPException(status_code=400, detail="No users found in system")
+        
+        admin_id = admin.id
         
         # Get or create message thread for this client
         client = session.get(ClientProfile, body.client_id)
@@ -1449,7 +1456,9 @@ def send_message_to_client(
         raise
     except Exception as e:
         print(f"Error sending message: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 @app.post("/messages/send")
