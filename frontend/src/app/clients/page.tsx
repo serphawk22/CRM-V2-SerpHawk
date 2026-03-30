@@ -73,6 +73,8 @@ export default function ClientsPage() {
   const [selectedClientForMsg, setSelectedClientForMsg] = useState<Client | null>(null);
   const [messageContent, setMessageContent] = useState('');
   const [messageSending, setMessageSending] = useState(false);
+  const [isFirstMessageModal, setIsFirstMessageModal] = useState(false);
+  const [firstMessageSending, setFirstMessageSending] = useState(false);
   const router = useRouter();
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
@@ -221,6 +223,41 @@ export default function ClientsPage() {
     }
   };
 
+  // Send first message handler
+  const handleSendFirstMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClientForMsg || !messageContent.trim()) return;
+
+    setFirstMessageSending(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/messages/send-to-client`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: selectedClientForMsg.id,
+          content: messageContent
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMessageContent('');
+        setIsFirstMessageModal(false);
+        setSelectedClientForMsg(null);
+        // Navigate to messages with the thread ID
+        if (data.thread_id) {
+          router.push(`/messages?thread_id=${data.thread_id}`);
+        }
+      } else {
+        alert('Failed to send message');
+      }
+    } catch (err) {
+      console.error('Error sending message:', err);
+      alert('Error sending message');
+    } finally {
+      setFirstMessageSending(false);
+    }
+  };
+
   // Send message handler
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -257,9 +294,38 @@ export default function ClientsPage() {
   };
 
   // Navigate to messages for a client
-  const handleNavigateToMessage = (client: Client) => {
+  const handleNavigateToMessage = async (client: Client) => {
     setSelectedClientForMsg(client);
-    router.push(`/messages?client_id=${client.id}`);
+    setMessageContent('');
+    
+    try {
+      // Get current user ID from localStorage or auth context
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
+        setIsMessageModalOpen(true);
+        return;
+      }
+      
+      const user = JSON.parse(userStr);
+      const res = await fetch(`${API_BASE_URL}/messages/${user.id}`);
+      const data = await res.json();
+      const threads = data.threads || [];
+      
+      // Check if thread exists for this client
+      const existingThread = threads.find((t: any) => t.client_id === client.id);
+      
+      if (existingThread) {
+        // Thread exists, navigate directly
+        router.push(`/messages?thread_id=${existingThread.thread_id}`);
+      } else {
+        // No thread exists, show first message modal
+        setIsFirstMessageModal(true);
+      }
+    } catch (err) {
+      console.error('Error checking threads:', err);
+      // On error, show first message modal as fallback
+      setIsFirstMessageModal(true);
+    }
   };
 
   // Filter clients by status (server does the search filtering)
@@ -680,6 +746,74 @@ export default function ClientsPage() {
                       )}
                     </button>
                   </div>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* First Message Modal */}
+      <AnimatePresence>
+        {isFirstMessageModal && selectedClientForMsg && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-50 p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+              className="bg-white/90 backdrop-blur-2xl rounded-[2rem] border border-white shadow-2xl w-full max-w-md overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-cyan-50">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800 tracking-tight">It's Your First Message!</h2>
+                  <p className="text-sm text-slate-500 mt-1">Start a conversation with {selectedClientForMsg.companyName || selectedClientForMsg.projectName || selectedClientForMsg.email}</p>
+                </div>
+                <button onClick={() => {setIsFirstMessageModal(false); setSelectedClientForMsg(null); setMessageContent('');}} className="w-10 h-10 bg-white shadow-sm rounded-full flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <form onSubmit={handleSendFirstMessage} className="flex flex-col p-6 space-y-4">
+                <div className="p-4 bg-gradient-to-r from-indigo-50 to-cyan-50 rounded-2xl border border-indigo-100">
+                  <p className="text-sm font-bold text-indigo-700 flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4" />
+                    Send your opening message to initiate the conversation
+                  </p>
+                </div>
+                
+                <textarea 
+                  value={messageContent}
+                  onChange={(e) => setMessageContent(e.target.value)}
+                  placeholder="Type your message here..."
+                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm font-medium resize-none min-h-[120px]"
+                />
+                
+                <div className="flex justify-end gap-3">
+                  <button 
+                    type="button" 
+                    onClick={() => {setIsFirstMessageModal(false); setSelectedClientForMsg(null); setMessageContent('');}}
+                    className="px-6 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={firstMessageSending || !messageContent.trim()}
+                    className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white rounded-xl font-bold hover:shadow-[0_8px_30px_rgba(79,70,229,0.3)] shadow-[0_4px_15px_rgba(79,70,229,0.2)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {firstMessageSending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        Send First Message
+                      </>
+                    )}
+                  </button>
                 </div>
               </form>
             </motion.div>
