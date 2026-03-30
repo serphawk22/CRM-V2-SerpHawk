@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Send, Paperclip, Search, UserCheck, MessageCircle, RefreshCw, ArrowRight, CheckCheck, Check, Circle, Phone, Video, MoreHorizontal, Smile, Image, Mic } from 'lucide-react';
 import { API_BASE_URL } from '@/config';
 import { useRole } from '@/context/RoleContext';
@@ -45,6 +46,9 @@ const LS_KEY = 'crm_msg_read_map';
 
 export default function MessagesHubPage() {
   const { role, user } = useRole();
+  const searchParams = useSearchParams();
+  const threadIdParam = searchParams.get('thread_id');
+  const clientIdParam = searchParams.get('client_id');
 
   const userId   = user?.id ?? null;
   const userName = user?.name || user?.email || 'You';
@@ -100,16 +104,35 @@ export default function MessagesHubPage() {
       setThreads(list);
 
       if (!silent && list.length > 0) {
-        const firstId = list[0].thread_id;
-        setActiveThreadId(firstId);
-        markRead(firstId, list[0].messages?.length ?? 0);
+        // Determine which thread to select based on URL params or default to first
+        let threadToSelect = list[0].thread_id;
+        
+        if (threadIdParam) {
+          // Look for thread with specific thread_id
+          const foundThread = list.find(t => t.thread_id === parseInt(threadIdParam));
+          if (foundThread) {
+            threadToSelect = foundThread.thread_id;
+          }
+        } else if (clientIdParam) {
+          // Look for thread with specific client_id
+          const foundThread = list.find(t => t.client_id === parseInt(clientIdParam));
+          if (foundThread) {
+            threadToSelect = foundThread.thread_id;
+          }
+        }
+        
+        setActiveThreadId(threadToSelect);
+        const selectedThread = list.find(t => t.thread_id === threadToSelect);
+        if (selectedThread) {
+          markRead(threadToSelect, selectedThread.messages?.length ?? 0);
+        }
       }
     } catch (err) {
       console.error('Failed to load threads:', err);
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [userId, markRead]);
+  }, [userId, markRead, threadIdParam, clientIdParam]);
 
   useEffect(() => { fetchThreads(); }, [fetchThreads]);
 
@@ -271,7 +294,7 @@ export default function MessagesHubPage() {
   };
 
   const filteredThreads = threads.filter(t => {
-    if (!(t.service_name || '').toLowerCase().includes(search.toLowerCase())) return false;
+    if (!(t.display_name || t.service_name || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (filter === 'Running') return t.service_status === 'Accepted' || t.service_status === 'In Progress';
     if (filter === 'Done')    return t.service_status === 'Delivered';
     if (filter === 'Hold')    return t.service_status === 'Hold';
@@ -391,7 +414,7 @@ export default function MessagesHubPage() {
                   const seenCount = readMap[thread.thread_id] ?? 0;
                   const msgCount  = thread.messages?.length ?? 0;
                   const unreadCount = !isActive && msgCount > seenCount ? msgCount - seenCount : 0;
-                  const initials  = (thread.service_name || 'S').substring(0, 2).toUpperCase();
+                  const initials  = (thread.display_name || thread.service_name || 'S').substring(0, 2).toUpperCase();
 
                   return (
                     <button
@@ -420,7 +443,7 @@ export default function MessagesHubPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-0.5">
                             <h3 className={`text-sm truncate ${unreadCount > 0 ? 'font-black text-gray-900' : 'font-semibold text-gray-800'}`}>
-                              {thread.service_name}
+                              {thread.display_name || thread.service_name}
                             </h3>
                             {lastMsg && (
                               <span className="text-[10px] text-gray-400 font-medium shrink-0">{fmtTime(lastMsg.timestamp)}</span>
@@ -454,10 +477,10 @@ export default function MessagesHubPage() {
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${threadColor(activeThread.thread_id)} flex items-center justify-center text-white text-xs font-black shadow-sm`}>
-                  {(activeThread.service_name || 'S').substring(0, 2).toUpperCase()}
+                  {(activeThread.display_name || activeThread.service_name || 'S').substring(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <h2 className="font-bold text-sm text-gray-900">{activeThread.service_name}</h2>
+                  <h2 className="font-bold text-sm text-gray-900">{activeThread.display_name || activeThread.service_name}</h2>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="flex items-center gap-1 text-[11px] text-gray-500">
                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />

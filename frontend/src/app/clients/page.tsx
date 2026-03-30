@@ -237,10 +237,14 @@ export default function ClientsPage() {
         })
       });
       if (res.ok) {
+        const data = await res.json();
         setMessageContent('');
         setIsMessageModalOpen(false);
         setSelectedClientForMsg(null);
-        // Optional: show success toast
+        // Navigate to messages with the thread ID
+        if (data.thread_id) {
+          router.push(`/messages?thread_id=${data.thread_id}`);
+        }
       } else {
         alert('Failed to send message');
       }
@@ -250,6 +254,12 @@ export default function ClientsPage() {
     } finally {
       setMessageSending(false);
     }
+  };
+
+  // Navigate to messages for a client
+  const handleNavigateToMessage = (client: Client) => {
+    setSelectedClientForMsg(client);
+    router.push(`/messages?client_id=${client.id}`);
   };
 
   // Filter clients by status (server does the search filtering)
@@ -410,7 +420,7 @@ export default function ClientsPage() {
                       </div>
                       <div className="flex-shrink-0 flex items-center gap-2">
                         <StatusBadge statusName={client.status} />
-                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); setSelectedClientForMsg(client); setIsMessageModalOpen(true); }} title="Send message" className="p-1.5 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-colors shrink-0">
+                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); handleNavigateToMessage(client); }} title="Send message" className="p-1.5 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-colors shrink-0">
                           <MessageCircle className="w-4 h-4" />
                         </button>
                         <button onClick={e => { e.preventDefault(); e.stopPropagation(); handleDeleteClient(client.id); }} title="Delete client" className="p-1.5 rounded-full bg-red-100 hover:bg-red-200 text-red-600 transition-colors shrink-0">

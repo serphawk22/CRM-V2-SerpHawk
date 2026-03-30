@@ -126,7 +126,7 @@ class ServiceRequest(SQLModel, table=True):
 class MessageThread(SQLModel, table=True):
     __tablename__ = "message_threads"
     id: Optional[int] = Field(default=None, primary_key=True)
-    service_request_id: int = Field(foreign_key="service_requests.id")
+    service_request_id: Optional[int] = Field(default=None, foreign_key="service_requests.id")
     client_id: int = Field(foreign_key="client_profiles.id")
     employee_id: Optional[int] = Field(default=None, foreign_key="users.id")
     status: str = Field(default="Active") # Active, Closed

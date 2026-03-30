@@ -1329,6 +1329,15 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
 
     thread_ids = [t.id for t in threads]
 
+    # Batch-fetch client profiles
+    client_ids = [t.client_id for t in threads]
+    clients: dict = {}
+    if client_ids:
+        clients = {
+            c.id: c
+            for c in session.exec(select(ClientProfile).where(ClientProfile.id.in_(client_ids))).all()
+        }
+
     # Batch-fetch service requests
     sr_ids = list({t.service_request_id for t in threads if t.service_request_id})
     service_requests: dict = {}
@@ -1371,16 +1380,33 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
 
     result = []
     for t in threads:
+        client = clients.get(t.client_id)
         sr = service_requests.get(t.service_request_id)
         svc = services.get(sr.service_id) if sr else None
         emp = users_map.get(t.employee_id) if t.employee_id else None
         msgs = msgs_by_thread.get(t.id, [])
+        
+        # Determine display name: prioritize service name, then company name, then project name
+        display_name = None
+        if svc:
+            display_name = svc.name
+        elif client and client.companyName:
+            display_name = client.companyName
+        elif client and client.projectName:
+            display_name = client.projectName
+        else:
+            display_name = "Conversation"
+        
         result.append(
             {
                 "thread_id": t.id,
+                "client_id": t.client_id,
                 "service_request_id": t.service_request_id,
+                "display_name": display_name,
                 "service_name": svc.name if svc else "Service",
                 "service_status": sr.status if sr else "Unknown",
+                "company_name": client.companyName if client else None,
+                "client_name": client.projectName if client else None,
                 "handler": emp.name if emp else "Support Team",
                 "messages": [
                     {
