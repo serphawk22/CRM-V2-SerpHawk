@@ -126,7 +126,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients();
-  }, [filter]);
+  }, [filter, search]);
 
   const fetchStatuses = async () => {
     try {
@@ -141,9 +141,17 @@ export default function ClientsPage() {
   const fetchClients = async () => {
     setLoading(true);
     try {
-      const url = filter === 'All' 
-        ? `${API_BASE_URL}/clients`
-        : `${API_BASE_URL}/clients?status=${filter}`;
+      const params = new URLSearchParams();
+      
+      if (filter !== 'All') {
+        params.append('status', filter);
+      }
+      
+      if (search.trim()) {
+        params.append('search', search.trim());
+      }
+      
+      const url = `${API_BASE_URL}/clients${params.toString() ? '?' + params.toString() : ''}`;
       
       const res = await fetch(url);
       const data = await res.json();
@@ -206,9 +214,10 @@ export default function ClientsPage() {
     }
   };
 
-  // Show all clients regardless of projectName, email, or companyName
-  // If you want to keep search, use: clients.filter(c => ...)
-  const filteredClients = clients;
+  // Filter clients by status (server does the search filtering)
+  const filteredClients = clients.filter(client => 
+    filter === 'All' || client.status === filter
+  );
 
   const StatusBadge = ({ statusName }: { statusName: string }) => {
     const statusObj = statuses.find(s => s.name === statusName);

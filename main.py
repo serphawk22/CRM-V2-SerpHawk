@@ -796,11 +796,24 @@ def list_client_statuses(session: Session = Depends(get_session)):
 @app.get("/clients")
 def list_clients(
     status: Optional[str] = None,
+    search: Optional[str] = None,
     session: Session = Depends(get_session),
 ):
     q = select(ClientProfile)
+    
+    # Filter by status if provided
     if status:
         q = q.where(ClientProfile.status == status)
+    
+    # Filter by search term if provided
+    if search:
+        search_term = f"%{search}%"
+        q = q.where(
+            (ClientProfile.companyName.ilike(search_term)) |
+            (ClientProfile.projectName.ilike(search_term)) |
+            (ClientProfile.websiteUrl.ilike(search_term))
+        )
+    
     clients = session.exec(q).all()
     return {"clients": [_client_dict(c, session) for c in clients]}
 
@@ -2032,13 +2045,24 @@ def global_search(q: str = Query("", min_length=1), session: Session = Depends(g
     results: list[dict] = []
     term = f"%{q}%"
 
-    # Clients
+    # Clients - search by company name, project name, or associated user email
     for c in session.exec(
         select(ClientProfile).where(
-            (ClientProfile.companyName.ilike(term)) | (ClientProfile.projectName.ilike(term))
+            (ClientProfile.companyName.ilike(term)) | 
+            (ClientProfile.projectName.ilike(term)) |
+            (ClientProfile.websiteUrl.ilike(term))
         ).limit(5)
     ).all():
         results.append({"type": "client", "id": c.id, "title": c.companyName or "Client", "sub": c.projectName or "", "link": f"/clients/{c.id}"})
+
+    # Also search users (by email) and find their associated clients
+    for u in session.exec(
+        select(User).where((User.email.ilike(term)) | (User.name.ilike(term)))
+    ).all():
+        # Find clients linked to this user
+        client_profile = session.exec(select(ClientProfile).where(ClientProfile.userId == u.id)).first()
+        if client_profile:
+            results.append({"type": "client", "id": client_profile.id, "title": client_profile.companyName or u.name or "Client", "sub": u.email or "", "link": f"/clients/{client_profile.id}"})
 
     # Projects
     for p in session.exec(select(Project).where(Project.name.ilike(term)).limit(5)).all():
