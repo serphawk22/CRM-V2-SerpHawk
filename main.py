@@ -5,7 +5,7 @@ from __future__ import annotations
 CRM V2 – SerpHawk  |  FastAPI Backend
 """
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Body
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from sqlmodel import Session
 from modules.scraper import research_and_map_company
@@ -496,6 +496,11 @@ class QuoteRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     thread_id: int
     sender_id: int
+    content: str
+
+
+class SendClientMessageRequest(BaseModel):
+    client_id: int
     content: str
 
 
@@ -1394,31 +1399,28 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
 
 @app.post("/messages/send-to-client")
 def send_message_to_client(
-    client_id: int = Body(...),
-    content: str = Body(...),
+    body: SendClientMessageRequest,
     session: Session = Depends(get_session)
 ):
     """Send a message to a client. Creates thread if needed."""
     try:
-        from sqlmodel import text
-        
         # Get the current user (admin sending the message)
         admin_id = 1  # Default to admin user
         
         # Get or create message thread for this client
-        client = session.get(ClientProfile, client_id)
+        client = session.get(ClientProfile, body.client_id)
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
         
         # Check if thread already exists
         thread = session.exec(
-            select(MessageThread).where(MessageThread.client_id == client_id)
+            select(MessageThread).where(MessageThread.client_id == body.client_id)
         ).first()
         
         if not thread:
             # Create new thread
             thread = MessageThread(
-                client_id=client_id,
+                client_id=body.client_id,
                 employee_id=admin_id,
                 status="Active"
             )
@@ -1430,7 +1432,7 @@ def send_message_to_client(
         msg = ChatMessage(
             thread_id=thread.id,
             sender_id=admin_id,
-            content=content,
+            content=body.content,
         )
         session.add(msg)
         session.commit()
