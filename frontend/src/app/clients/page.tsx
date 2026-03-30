@@ -17,7 +17,10 @@ import {
   Globe,
   MoreVertical,
   Activity,
-  Mail
+  Mail,
+  MessageCircle,
+  Send,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 import { API_BASE_URL } from '@/config';
@@ -66,6 +69,10 @@ export default function ClientsPage() {
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [selectedClientForMsg, setSelectedClientForMsg] = useState<Client | null>(null);
+  const [messageContent, setMessageContent] = useState('');
+  const [messageSending, setMessageSending] = useState(false);
   const router = useRouter();
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
@@ -211,6 +218,37 @@ export default function ClientsPage() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Send message handler
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClientForMsg || !messageContent.trim()) return;
+
+    setMessageSending(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/messages/send-to-client`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: selectedClientForMsg.id,
+          content: messageContent
+        })
+      });
+      if (res.ok) {
+        setMessageContent('');
+        setIsMessageModalOpen(false);
+        setSelectedClientForMsg(null);
+        // Optional: show success toast
+      } else {
+        alert('Failed to send message');
+      }
+    } catch (err) {
+      console.error('Error sending message:', err);
+      alert('Error sending message');
+    } finally {
+      setMessageSending(false);
     }
   };
 
@@ -372,7 +410,10 @@ export default function ClientsPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <StatusBadge statusName={client.status} />
-                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); handleDeleteClient(client.id); }} title="Delete client" className="ml-2 p-1.5 rounded-full bg-red-100 hover:bg-red-200 text-red-600 transition-colors">
+                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); setSelectedClientForMsg(client); setIsMessageModalOpen(true); }} title="Send message" className="ml-2 p-1.5 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-colors">
+                          <MessageCircle className="w-4 h-4" />
+                        </button>
+                        <button onClick={e => { e.preventDefault(); e.stopPropagation(); handleDeleteClient(client.id); }} title="Delete client" className="p-1.5 rounded-full bg-red-100 hover:bg-red-200 text-red-600 transition-colors">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                       </div>
@@ -564,6 +605,73 @@ export default function ClientsPage() {
                   </div>
                 </form>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Message Modal */}
+      <AnimatePresence>
+        {isMessageModalOpen && selectedClientForMsg && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-50 p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+              className="bg-white/90 backdrop-blur-2xl rounded-[2rem] border border-white shadow-2xl w-full max-w-md overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white/50">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800 tracking-tight">Send Message</h2>
+                  <p className="text-sm text-slate-500 mt-1">{selectedClientForMsg.companyName || selectedClientForMsg.projectName || selectedClientForMsg.email}</p>
+                </div>
+                <button onClick={() => {setIsMessageModalOpen(false); setSelectedClientForMsg(null); setMessageContent('');}} className="w-10 h-10 bg-white shadow-sm rounded-full flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <form onSubmit={handleSendMessage} className="flex flex-col h-96 p-6">
+                <div className="flex-1 overflow-y-auto mb-4 p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                  <p className="text-sm text-slate-500 italic">Send a message to {selectedClientForMsg.companyName || selectedClientForMsg.projectName || 'this client'}...</p>
+                </div>
+                
+                <div className="space-y-3">
+                  <textarea 
+                    value={messageContent}
+                    onChange={(e) => setMessageContent(e.target.value)}
+                    placeholder="Type your message here..."
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm font-medium resize-none min-h-[100px]"
+                  />
+                  
+                  <div className="flex justify-end gap-3">
+                    <button 
+                      type="button" 
+                      onClick={() => {setIsMessageModalOpen(false); setSelectedClientForMsg(null); setMessageContent('');}}
+                      className="px-6 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors shadow-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit"
+                      disabled={messageSending || !messageContent.trim()}
+                      className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white rounded-xl font-bold hover:shadow-[0_8px_30px_rgba(79,70,229,0.3)] shadow-[0_4px_15px_rgba(79,70,229,0.2)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                      {messageSending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          Send
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

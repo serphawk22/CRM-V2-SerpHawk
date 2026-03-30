@@ -1392,6 +1392,64 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
     return {"threads": result}
 
 
+@app.post("/messages/send-to-client")
+def send_message_to_client(
+    client_id: int = Body(...),
+    content: str = Body(...),
+    session: Session = Depends(get_session)
+):
+    """Send a message to a client. Creates thread if needed."""
+    try:
+        from sqlmodel import text
+        
+        # Get the current user (admin sending the message)
+        admin_id = 1  # Default to admin user
+        
+        # Get or create message thread for this client
+        client = session.get(ClientProfile, client_id)
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
+        
+        # Check if thread already exists
+        thread = session.exec(
+            select(MessageThread).where(MessageThread.client_id == client_id)
+        ).first()
+        
+        if not thread:
+            # Create new thread
+            thread = MessageThread(
+                client_id=client_id,
+                employee_id=admin_id,
+                status="Active"
+            )
+            session.add(thread)
+            session.commit()
+            session.refresh(thread)
+        
+        # Create and send message
+        msg = ChatMessage(
+            thread_id=thread.id,
+            sender_id=admin_id,
+            content=content,
+        )
+        session.add(msg)
+        session.commit()
+        session.refresh(msg)
+        
+        return {
+            "success": True,
+            "message_id": msg.id,
+            "thread_id": thread.id,
+            "content": msg.content,
+            "timestamp": msg.timestamp.isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error sending message: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/messages/send")
 def send_message(body: SendMessageRequest, session: Session = Depends(get_session)):
     thread = session.get(MessageThread, body.thread_id)
