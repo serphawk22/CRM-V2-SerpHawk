@@ -204,7 +204,11 @@ export default function MessagesHubPage() {
 
   // ── Fallback poll every 30s (in case WS drops) ────────────────────────
   useEffect(() => {
-    const id = setInterval(() => fetchThreads(true), 30000);
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      if (wsRef.current?.readyState === WebSocket.OPEN) return;
+      fetchThreads(true);
+    }, 30000);
     return () => clearInterval(id);
   }, [fetchThreads]);
 

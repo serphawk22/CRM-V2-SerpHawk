@@ -68,6 +68,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [selectedClientForMsg, setSelectedClientForMsg] = useState<Client | null>(null);
@@ -134,8 +135,13 @@ export default function ClientsPage() {
   }, []);
 
   useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(id);
+  }, [search]);
+
+  useEffect(() => {
     fetchClients();
-  }, [filter, search]);
+  }, [filter, debouncedSearch]);
 
   const fetchStatuses = async () => {
     try {
@@ -156,8 +162,8 @@ export default function ClientsPage() {
         params.append('status', filter);
       }
       
-      if (search.trim()) {
-        params.append('search', search.trim());
+      if (debouncedSearch.trim()) {
+        params.append('search', debouncedSearch.trim());
       }
       
       const url = `${API_BASE_URL}/clients${params.toString() ? '?' + params.toString() : ''}`;
@@ -297,35 +303,9 @@ export default function ClientsPage() {
   const handleNavigateToMessage = async (client: Client) => {
     setSelectedClientForMsg(client);
     setMessageContent('');
-    
-    try {
-      // Get current user ID from localStorage or auth context
-      const userStr = localStorage.getItem('user');
-      if (!userStr) {
-        setIsMessageModalOpen(true);
-        return;
-      }
-      
-      const user = JSON.parse(userStr);
-      const res = await fetch(`${API_BASE_URL}/messages/${user.id}`);
-      const data = await res.json();
-      const threads = data.threads || [];
-      
-      // Check if thread exists for this client
-      const existingThread = threads.find((t: any) => t.client_id === client.id);
-      
-      if (existingThread) {
-        // Thread exists, navigate directly
-        router.push(`/messages?thread_id=${existingThread.thread_id}`);
-      } else {
-        // No thread exists, show first message modal
-        setIsFirstMessageModal(true);
-      }
-    } catch (err) {
-      console.error('Error checking threads:', err);
-      // On error, show first message modal as fallback
-      setIsFirstMessageModal(true);
-    }
+
+    // Backend now auto-creates thread per client when needed.
+    router.push(`/messages?client_id=${client.id}`);
   };
 
   // Filter clients by status (server does the search filtering)

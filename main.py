@@ -46,8 +46,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 from sqlmodel import Session, select
+from sqlalchemy import text
 
 from database import (
     ActivityLog,
@@ -86,11 +88,28 @@ def get_session():
     with Session(engine) as session:
         yield session
 
+
+def _ensure_database_indexes():
+    """Create critical indexes for frequently accessed paths."""
+    stmts = [
+        "CREATE INDEX IF NOT EXISTS idx_message_threads_client_id ON message_threads (client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_message_threads_created_at ON message_threads (created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages (thread_id)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_ts ON chat_messages (thread_id, timestamp)",
+        'CREATE INDEX IF NOT EXISTS idx_client_profiles_user_id ON client_profiles ("userId")',
+        "CREATE INDEX IF NOT EXISTS idx_service_requests_client_id ON service_requests (client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests (status)",
+    ]
+    with engine.begin() as conn:
+        for stmt in stmts:
+            conn.execute(text(stmt))
+
 app = FastAPI(title="SerpHawk CRM", version="2.0.0")
 
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
+    _ensure_database_indexes()
 
 app.add_middleware(
     CORSMiddleware,
@@ -99,6 +118,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Serve uploaded files
 from fastapi.staticfiles import StaticFiles
@@ -1350,10 +1370,12 @@ def _ensure_threads_and_welcome_messages(
     if not thread_ids:
         return
 
-    existing_messages = session.exec(
-        select(ChatMessage).where(ChatMessage.thread_id.in_(thread_ids))
+    existing_message_thread_ids = session.exec(
+        select(ChatMessage.thread_id)
+        .where(ChatMessage.thread_id.in_(thread_ids))
+        .distinct()
     ).all()
-    threads_with_messages = {m.thread_id for m in existing_messages}
+    threads_with_messages = set(existing_message_thread_ids)
 
     messages_added = False
     for thread in all_threads:
@@ -1374,7 +1396,12 @@ def _ensure_threads_and_welcome_messages(
 
 
 @app.get("/messages/{user_id}")
-def get_message_threads(user_id: int, session: Session = Depends(get_session)):
+def get_message_threads(
+    user_id: int,
+    thread_limit: int = Query(default=120, ge=10, le=500),
+    message_limit: int = Query(default=30, ge=5, le=100),
+    session: Session = Depends(get_session),
+):
     from collections import defaultdict
 
     user = session.get(User, user_id)
@@ -1394,7 +1421,11 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
             client_ids=[c.id for c in all_clients if c.id is not None],
             support_user_id=support_user.id,
         )
-        threads = session.exec(select(MessageThread)).all()
+        threads = session.exec(
+            select(MessageThread)
+            .order_by(MessageThread.created_at.desc())
+            .limit(thread_limit)
+        ).all()
     else:
         cp = session.exec(select(ClientProfile).where(ClientProfile.userId == user_id)).first()
         if not cp:
@@ -1406,6 +1437,8 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
         )
         threads = session.exec(
             select(MessageThread).where(MessageThread.client_id == cp.id)
+            .order_by(MessageThread.created_at.desc())
+            .limit(thread_limit)
         ).all()
 
     if not threads:
@@ -1441,11 +1474,14 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
         }
 
     # Batch-fetch all messages for all threads in one query
+    max_total_messages = max(100, thread_limit * message_limit)
     all_messages = session.exec(
         select(ChatMessage)
         .where(ChatMessage.thread_id.in_(thread_ids))
-        .order_by(ChatMessage.thread_id, ChatMessage.timestamp)
+        .order_by(ChatMessage.timestamp.desc())
+        .limit(max_total_messages)
     ).all()
+    all_messages = sorted(all_messages, key=lambda m: (m.thread_id, m.timestamp))
 
     # Collect all user IDs needed (employees + message senders)
     user_ids_needed = {t.employee_id for t in threads if t.employee_id}
@@ -1460,7 +1496,10 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
     # Group messages by thread_id
     msgs_by_thread: dict = defaultdict(list)
     for m in all_messages:
-        msgs_by_thread[m.thread_id].append(m)
+        thread_messages = msgs_by_thread[m.thread_id]
+        thread_messages.append(m)
+        if len(thread_messages) > message_limit:
+            thread_messages.pop(0)
 
     result = []
     for t in threads:
