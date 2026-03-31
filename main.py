@@ -1306,6 +1306,73 @@ def admin_services_overview(session: Session = Depends(get_session)):
 # ─────────────────────────────────────────────────────────────────────────────
 # Messages
 # ─────────────────────────────────────────────────────────────────────────────
+WELCOME_MESSAGE_TEXT = "Welcome to the new beginning"
+
+
+def _ensure_threads_and_welcome_messages(
+    session: Session,
+    client_ids: List[int],
+    support_user_id: int,
+):
+    """Create one thread per client if missing and seed a default welcome message."""
+    valid_client_ids = [cid for cid in client_ids if cid is not None]
+    if not valid_client_ids:
+        return
+
+    existing_threads = session.exec(
+        select(MessageThread).where(MessageThread.client_id.in_(valid_client_ids))
+    ).all()
+    thread_by_client = {t.client_id: t for t in existing_threads}
+
+    created_threads: List[MessageThread] = []
+    for client_id in valid_client_ids:
+        if client_id in thread_by_client:
+            continue
+        thread = MessageThread(
+            client_id=client_id,
+            employee_id=support_user_id,
+            status="Active",
+        )
+        session.add(thread)
+        created_threads.append(thread)
+
+    if created_threads:
+        session.commit()
+        for thread in created_threads:
+            session.refresh(thread)
+            thread_by_client[thread.client_id] = thread
+
+    all_threads = list(thread_by_client.values())
+    if not all_threads:
+        return
+
+    thread_ids = [t.id for t in all_threads if t.id is not None]
+    if not thread_ids:
+        return
+
+    existing_messages = session.exec(
+        select(ChatMessage).where(ChatMessage.thread_id.in_(thread_ids))
+    ).all()
+    threads_with_messages = {m.thread_id for m in existing_messages}
+
+    messages_added = False
+    for thread in all_threads:
+        if thread.id in threads_with_messages:
+            continue
+        session.add(
+            ChatMessage(
+                thread_id=thread.id,
+                sender_id=support_user_id,
+                content=WELCOME_MESSAGE_TEXT,
+                is_system=True,
+            )
+        )
+        messages_added = True
+
+    if messages_added:
+        session.commit()
+
+
 @app.get("/messages/{user_id}")
 def get_message_threads(user_id: int, session: Session = Depends(get_session)):
     from collections import defaultdict
@@ -1314,12 +1381,29 @@ def get_message_threads(user_id: int, session: Session = Depends(get_session)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    support_user = session.exec(select(User).where(User.role == "Admin")).first()
+    if not support_user:
+        support_user = session.exec(select(User).where(User.role == "Employee")).first()
+    if not support_user:
+        support_user = user
+
     if user.role in ("Admin", "Employee"):
+        all_clients = session.exec(select(ClientProfile)).all()
+        _ensure_threads_and_welcome_messages(
+            session=session,
+            client_ids=[c.id for c in all_clients if c.id is not None],
+            support_user_id=support_user.id,
+        )
         threads = session.exec(select(MessageThread)).all()
     else:
         cp = session.exec(select(ClientProfile).where(ClientProfile.userId == user_id)).first()
         if not cp:
             return {"threads": []}
+        _ensure_threads_and_welcome_messages(
+            session=session,
+            client_ids=[cp.id],
+            support_user_id=support_user.id,
+        )
         threads = session.exec(
             select(MessageThread).where(MessageThread.client_id == cp.id)
         ).all()
