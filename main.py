@@ -500,8 +500,11 @@ class ServiceCreateRequest(BaseModel):
 
 
 class ServiceRequestCreate(BaseModel):
-    service_id: int
-    client_email: str
+    service_id: int = Field(..., alias="serviceId")
+    client_email: str = Field(..., alias="clientEmail")
+
+    class Config:
+        allow_population_by_field_name = True
 
 
 class QuoteRequest(BaseModel):
@@ -1253,6 +1256,36 @@ def request_service(body: ServiceRequestCreate, session: Session = Depends(get_s
     )
     session.add(thread)
     session.commit()
+    session.refresh(thread)
+
+    # Optional system message to start conversation
+    session.add(ChatMessage(
+        thread_id=thread.id,
+        sender_id=user.id,
+        content=f"Client {user.name or user.email} requested service ID {body.service_id}.",
+        is_system=True,
+    ))
+
+    # Notify admins about new request
+    admins = session.exec(select(User).where(User.role.in_(("Admin", "Employee")))).all()
+    for admin in admins:
+        session.add(Notification(
+            user_id=admin.id,
+            title="New Service Request",
+            message=f"{cp.companyName or user.email} requested a new service.",
+            type="info",
+            link="/admin/requests",
+        ))
+    session.commit()
+
+    # Send email to admins for awareness (best-effort)
+    for admin in admins:
+        if admin.email:
+            _send_notification_email(
+                admin.email,
+                "New Client Service Request",
+                f"<p>{cp.companyName or user.email} requested service ID <strong>{body.service_id}</strong>.</p>"
+            )
 
     return {"request": {"id": sr.id, "status": sr.status}}
 
@@ -1330,6 +1363,38 @@ def send_quote(body: QuoteRequest, session: Session = Depends(get_session)):
         sr.assigned_employee_id = body.assigned_employee_id
     session.add(sr)
     session.commit()
+
+    # Notify client about quote sent
+    cp = session.get(ClientProfile, sr.client_id)
+    if cp and cp.userId:
+        client_user = session.get(User, cp.userId)
+        if client_user and client_user.email:
+            _send_notification_email(
+                client_user.email,
+                f"Quote for service request #{sr.id}",
+                f"<p>Your quote is ready for request #{sr.id}. Please check your dashboard to accept it.</p>"
+            )
+        session.add(Notification(
+            user_id=client_user.id if client_user else cp.userId,
+            title="Quote Sent",
+            message=f"A quote has been sent for your service request #{sr.id}.",
+            type="info",
+            link="/store?tab=requests",
+        ))
+
+    # Add message to thread for visibility
+    thread = session.exec(select(MessageThread).where(MessageThread.service_request_id == sr.id)).first()
+    if thread:
+        admin_user = session.get(User, body.assigned_employee_id) if body.assigned_employee_id else session.exec(select(User).where(User.role == "Admin")).first()
+        if admin_user:
+            session.add(ChatMessage(
+                thread_id=thread.id,
+                sender_id=admin_user.id,
+                content=f"Quote sent: ${body.quoted_amount}. {body.quote_message}",
+                is_system=True,
+            ))
+    session.commit()
+
     return {"ok": True}
 
 
@@ -1342,6 +1407,32 @@ def accept_quote(request_id: int, session: Session = Depends(get_session)):
     sr.client_accepted_quote = True
     sr.accepted_at = datetime.utcnow()
     session.add(sr)
+    session.commit()
+
+    cp = session.get(ClientProfile, sr.client_id)
+    # send admin/admin-team notification to confirm acceptance
+    admins = session.exec(select(User).where(User.role.in_(("Admin", "Employee")))).all()
+    for admin in admins:
+        session.add(Notification(
+            user_id=admin.id,
+            title="Client Accepted Quote",
+            message=f"Client {cp.companyName or cp.userId} accepted quote for request #{sr.id}.",
+            type="success",
+            link="/admin/requests",
+        ))
+
+    # Post system message to thread
+    thread = session.exec(select(MessageThread).where(MessageThread.service_request_id == sr.id)).first()
+    if thread:
+        system_sender = session.exec(select(User).where(User.role == "Admin")).first()
+        if system_sender:
+            session.add(ChatMessage(
+                thread_id=thread.id,
+                sender_id=system_sender.id,
+                content=f"Service request #{sr.id} was accepted by client.",
+                is_system=True,
+            ))
+
     session.commit()
     return {"ok": True}
 
