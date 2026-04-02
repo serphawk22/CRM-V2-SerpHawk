@@ -224,6 +224,10 @@ export default function InvoicesPage() {
                       <div className="flex items-center gap-2">
                         <button onClick={() => { setSelectedInvoice(inv); setShowDetailModal(true); }}
                           className="text-indigo-600 font-semibold text-xs hover:underline">View</button>
+                        {inv.status === 'Draft' && !isClient && (
+                          <button onClick={() => updateStatus(inv.id, 'Sent')}
+                            className="text-blue-600 font-semibold text-xs hover:underline">Send</button>
+                        )}
                         <button onClick={() => downloadInvoice(inv)}
                           className="text-gray-500 hover:text-gray-800 transition-colors" title="Download">
                           <Download className="w-4 h-4" />

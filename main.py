@@ -1045,6 +1045,30 @@ def admin_client_xray(client_id: int, session: Session = Depends(get_session)):
     service_reqs = session.exec(
         select(ServiceRequest).where(ServiceRequest.client_id == client_id)
     ).all()
+
+    # Enrich active services for client x-ray.
+    active_services = []
+    for sr in service_reqs:
+        svc = session.get(ServiceCatalog, sr.service_id)
+        active_services.append({
+            "request_id": sr.id,
+            "status": sr.status,
+            "service_id": sr.service_id,
+            "service_name": svc.name if svc else "Unknown Service",
+            "quoted_amount": sr.quoted_amount,
+            "quote_message": sr.quote_message,
+            "requested_at": sr.requested_at.isoformat(),
+            "assigned_employee_name": (session.get(User, sr.assigned_employee_id).name if sr.assigned_employee_id and session.get(User, sr.assigned_employee_id) else "Unassigned"),
+        })
+
+    latest_audit = session.exec(
+        select(SEOAudit).where(SEOAudit.clientId == client_id).order_by(SEOAudit.last_run.desc()).limit(1)
+    ).first()
+
+    latest_analytics = session.exec(
+        select(AnalyticsData).where(AnalyticsData.clientId == client_id).order_by(AnalyticsData.last_synced.desc()).limit(1)
+    ).first()
+
     return {
         "client": _client_dict(cp, session),
         "remarks": [
@@ -1059,6 +1083,22 @@ def admin_client_xray(client_id: int, session: Session = Depends(get_session)):
             {"id": sr.id, "status": sr.status, "service_id": sr.service_id}
             for sr in service_reqs
         ],
+        "active_services": active_services,
+        "latest_audit": {
+            "health_score": latest_audit.health_score if latest_audit else None,
+            "page_speed_desktop": latest_audit.page_speed_desktop if latest_audit else None,
+            "page_speed_mobile": latest_audit.page_speed_mobile if latest_audit else None,
+            "core_web_vitals_passed": latest_audit.core_web_vitals_passed if latest_audit else False,
+            "last_run": latest_audit.last_run.isoformat() if latest_audit else None,
+        },
+        "latest_analytics": {
+            "sessions": latest_analytics.sessions if latest_analytics else None,
+            "pageviews": latest_analytics.pageviews if latest_analytics else None,
+            "gsc_impressions": latest_analytics.gsc_impressions if latest_analytics else None,
+            "gsc_ctr": latest_analytics.gsc_ctr if latest_analytics else None,
+            "gsc_position": latest_analytics.gsc_position if latest_analytics else None,
+            "last_synced": latest_analytics.last_synced.isoformat() if latest_analytics else None,
+        },
     }
 
 
@@ -1423,7 +1463,6 @@ def get_message_threads(
         )
         threads = session.exec(
             select(MessageThread)
-            .order_by(MessageThread.created_at.desc())
             .limit(thread_limit)
         ).all()
     else:
@@ -1437,7 +1476,6 @@ def get_message_threads(
         )
         threads = session.exec(
             select(MessageThread).where(MessageThread.client_id == cp.id)
-            .order_by(MessageThread.created_at.desc())
             .limit(thread_limit)
         ).all()
 
@@ -1519,7 +1557,13 @@ def get_message_threads(
             display_name = client.projectName
         else:
             display_name = "Conversation"
-        
+
+        latest_message_ts = None
+        if msgs:
+            latest_message_ts = msgs[-1].timestamp.isoformat()
+        else:
+            latest_message_ts = t.created_at.isoformat() if getattr(t, 'created_at', None) else datetime.utcnow().isoformat()
+
         result.append(
             {
                 "thread_id": t.id,
@@ -1531,6 +1575,7 @@ def get_message_threads(
                 "company_name": client.companyName if client else None,
                 "client_name": client.projectName if client else None,
                 "handler": emp.name if emp else "Support Team",
+                "latest_message_ts": latest_message_ts,
                 "messages": [
                     {
                         "id": m.id,
@@ -1543,6 +1588,21 @@ def get_message_threads(
                 ],
             }
         )
+
+    # Sort threads with newest messages first
+    def _thread_sort_key(item):
+        try:
+            return datetime.fromisoformat(item.get("latest_message_ts") or "1970-01-01T00:00:00")
+        except Exception:
+            return datetime(1970, 1, 1)
+
+    result.sort(key=_thread_sort_key, reverse=True)
+
+    # Strip helper field before returning
+    for entry in result:
+        if "latest_message_ts" in entry:
+            del entry["latest_message_ts"]
+
     return {"threads": result}
 
 

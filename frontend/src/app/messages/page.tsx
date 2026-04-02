@@ -97,11 +97,18 @@ export default function MessagesHubPage() {
       const data = await res.json();
       const list: any[] = data.threads || [];
 
-      // On silent polls, skip re-render if nothing changed
-      if (silent && JSON.stringify(list) === JSON.stringify(threadsRef.current)) return;
+      // sort newest conversation first (highest latest message timestamp)
+      const sorted = [...list].sort((a, b) => {
+        const aTs = a.messages?.length ? new Date(a.messages[a.messages.length - 1].timestamp).getTime() : 0;
+        const bTs = b.messages?.length ? new Date(b.messages[b.messages.length - 1].timestamp).getTime() : 0;
+        return bTs - aTs;
+      });
 
-      threadsRef.current = list;
-      setThreads(list);
+      // On silent polls, skip re-render if nothing changed
+      if (silent && JSON.stringify(sorted) === JSON.stringify(threadsRef.current)) return;
+
+      threadsRef.current = sorted;
+      setThreads(sorted);
 
       if (!silent && list.length > 0) {
         // Determine which thread to select based on URL params or default to first
@@ -148,13 +155,18 @@ export default function MessagesHubPage() {
 
       if (data.type === 'new_message') {
         const msg = data.message;
-        setThreads(prev =>
-          prev.map(t =>
+        setThreads(prev => {
+          const updated = prev.map(t =>
             t.thread_id === threadId
               ? { ...t, messages: [...t.messages.filter((m: any) => !m._optimistic), { ...msg, isMe: msg.sender_id === userId }] }
               : t
-          )
-        );
+          );
+          // bring the updated thread to top
+          const moved = updated.filter(t => t.thread_id !== threadId);
+          const current = updated.find(t => t.thread_id === threadId);
+          if (current) moved.unshift(current);
+          return moved;
+        });
         // Clear typing indicator for this sender
         setTypingUsers(prev => { const n = { ...prev }; delete n[msg.sender_id]; return n; });
       }
