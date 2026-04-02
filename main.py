@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Body
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from sqlmodel import Session
 from modules.scraper import research_and_map_company
-from pydantic import BaseModel
+from pydantic import BaseModel, Field as PydanticField
 
 from database import engine, SentEmail
 from sqlmodel import select
@@ -500,8 +500,8 @@ class ServiceCreateRequest(BaseModel):
 
 
 class ServiceRequestCreate(BaseModel):
-    service_id: int = Field(..., alias="serviceId")
-    client_email: str = Field(..., alias="clientEmail")
+    service_id: int = PydanticField(alias="serviceId")
+    client_email: str = PydanticField(alias="clientEmail")
 
     class Config:
         allow_population_by_field_name = True
